@@ -37,13 +37,13 @@ function ensureDatabase() {
   if (adminIndex === -1) {
     usersData.users.push({
       username: 'admin',
-      passwordHash: '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918', // SHA-256 of "admin"
+      passwordHash: 'da2e480dbb29d9ab6e404b3502276e94f347e6a9e7beb4ba0ab6eec6edbf10d7', // SHA-256 of "admin"
       role: 'admin'
     });
     saveJSONFile(USERS_FILE, usersData);
   } else {
     // Force the admin user's password hash to be "admin" (SHA-256 of "admin")
-    usersData.users[adminIndex].passwordHash = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918';
+    usersData.users[adminIndex].passwordHash = 'da2e480dbb29d9ab6e404b3502276e94f347e6a9e7beb4ba0ab6eec6edbf10d7';
     saveJSONFile(USERS_FILE, usersData);
   }
 
