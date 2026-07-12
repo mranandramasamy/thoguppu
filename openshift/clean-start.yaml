@@ -39,6 +39,18 @@ spec:
           env:
             - name: NODE_ENV
               value: "production"
+            - name: PORT
+              value: "8080"
+            - name: ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: admin-credentials
+                  key: username
+            - name: ADMIN_PASSWORD_HASH
+              valueFrom:
+                secretKeyRef:
+                  name: admin-credentials
+                  key: password-hash
           volumeMounts:
             - name: cms-volume
               mountPath: /opt/app-root/src/cms_data

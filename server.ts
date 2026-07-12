@@ -11,6 +11,29 @@ const USERS_FILE = path.join(DATA_DIR, '.db_users.json');
 const OWNERSHIP_FILE = path.join(DATA_DIR, '.db_ownership.json');
 const SESSIONS_FILE = path.join(DATA_DIR, '.db_sessions.json');
 
+const KEYS_FILE = path.join(DATA_DIR, '.db_keys.json');
+
+if (!fs.existsSync(KEYS_FILE)) {
+    saveJSONFile(KEYS_FILE, { keys: {} });
+}
+
+function validateAccess(req: any) {
+  // 1. Check standard Session (Login)
+  const session = getSession(req);
+  if (session) return { valid: true, username: session.username, isAdmin: session.role === 'admin' };
+
+  // 2. Check for Permanent API Key (Client ID)
+  // Check Header (Secure) or Query Param (Easier)
+  const apiKey = req.headers['x-api-key'] || req.query.client_id;
+  if (!apiKey) return { valid: false };
+
+  const keysData = loadJSONFile(KEYS_FILE, { keys: {} });
+  if (keysData.keys[apiKey]) {
+    return { valid: true, username: keysData.keys[apiKey].owner, isAdmin: false };
+  }
+  return { valid: false };
+}
+
 function loadJSONFile(filePath: string, defaultVal: any) {
   try {
     if (fs.existsSync(filePath)) {
@@ -32,18 +55,29 @@ function saveJSONFile(filePath: string, data: any) {
 
 function ensureDatabase() {
   const usersData = loadJSONFile(USERS_FILE, { users: [] });
-  const adminIndex = usersData.users.findIndex((u: any) => u.username.toLowerCase() === 'admin');
+  
+  // Get credentials from environment (injected via OpenShift Secret)
+  const ADMIN_USER = process.env.ADMIN_USER || 'admin';
+  const ADMIN_PASS_HASH = process.env.ADMIN_PASSWORD_HASH;
+
+  if (!ADMIN_PASS_HASH) {
+    console.error("CRITICAL: ADMIN_PASSWORD_HASH environment variable is not set!");
+    return; // Or process.exit(1) if you want the app to crash without valid creds
+  }
+
+  const adminIndex = usersData.users.findIndex((u: any) => u.username.toLowerCase() === ADMIN_USER.toLowerCase());
   
   if (adminIndex === -1) {
     usersData.users.push({
-      username: 'admin',
-      passwordHash: '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918', // SHA-256 of "admin"
+      username: ADMIN_USER,
+      passwordHash: ADMIN_PASS_HASH,
       role: 'admin'
     });
     saveJSONFile(USERS_FILE, usersData);
   } else {
-    // Force the admin user's password hash to be "admin" (SHA-256 of "admin")
-    usersData.users[adminIndex].passwordHash = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918';
+    // Sync the DB with the latest Secret values
+    usersData.users[adminIndex].username = ADMIN_USER;
+    usersData.users[adminIndex].passwordHash = ADMIN_PASS_HASH;
     saveJSONFile(USERS_FILE, usersData);
   }
 
@@ -681,14 +715,15 @@ async function startServer() {
 
   // 7. Get sub-directories and files of a specific folder as a whole JSON tree (GET /api/directory/*)
   app.get('/api/directory/*', (req, res) => {
-    const session = getSession(req);
-    if (!session) {
-      return res.status(401).json({ success: false, error: 'Not authenticated. Please log in.' });
+    const access = validateAccess(req);
+    if (!access.valid) {
+      return res.status(401).json({ success: false, error: 'Not authenticated or invalid API Key.' });
     }
 
     const folderRelPath = (req.params[0] || '').replace(/^\/+|\/+$/g, '');
     try {
       const absPath = safeResolve(folderRelPath);
+
       if (!fs.existsSync(absPath)) {
         return res.status(404).json({ success: false, error: `Directory not found: ${folderRelPath}` });
       }
@@ -699,11 +734,13 @@ async function startServer() {
       }
 
       const ownership = loadJSONFile(OWNERSHIP_FILE, { ownership: {} }).ownership;
-      const isAdmin = session.role === 'admin';
+      
+      // FIX: Use access.isAdmin instead of session.role
+      const isAdmin = access.isAdmin; 
 
-      // Compute contents recursively based on the access filter
       if (req.query.verbose === 'true') {
-        const contents = buildTree(absPath, folderRelPath, session.username, isAdmin, ownership);
+        // FIX: Use access.username and access.isAdmin
+        const contents = buildTree(absPath, folderRelPath, access.username, isAdmin, ownership);
         res.json({
           success: true,
           path: folderRelPath,
@@ -711,7 +748,8 @@ async function startServer() {
           contents
         });
       } else {
-        const simpleTree = buildSimpleTree(absPath, folderRelPath, session.username, isAdmin, ownership);
+        // FIX: Use access.username and access.isAdmin
+        const simpleTree = buildSimpleTree(absPath, folderRelPath, access.username, isAdmin, ownership);
         res.json(simpleTree);
       }
     } catch (err: any) {
@@ -719,24 +757,25 @@ async function startServer() {
     }
   });
 
-  // === VITE / FRONTEND ASSET ROUTING ===
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
+  app.post('/api/auth/generate-key', (req, res) => {
+      const session = getSession(req);
+      // Only Admin can create keys
+      if (!session || session.role !== 'admin') {
+          return res.status(403).json({ success: false, error: 'Admin only' });
+      }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`CMS Server running on http://localhost:${PORT}`);
+      const newKey = crypto.randomBytes(32).toString('hex');
+      const keysData = loadJSONFile(KEYS_FILE, { keys: {} });
+      
+      keysData.keys[newKey] = {
+          owner: session.username,
+          createdAt: new Date().toISOString()
+      };
+      
+      saveJSONFile(KEYS_FILE, keysData);
+      res.json({ success: true, client_id: newKey });
   });
+
 }
 
 startServer();
