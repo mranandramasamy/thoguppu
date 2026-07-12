@@ -716,11 +716,8 @@ async function setupRoutes() {
 
   // 7. Get sub-directories and files of a specific folder as a whole JSON tree (GET /api/directory/*)
   app.get('/api/directory/*', (req, res) => {
-    const access = validateAccess(req);
-    const username = access.valid ? access.username : null;
-    const isAdmin = access.valid ? access.isAdmin : false;
-
     const folderRelPath = (req.params[0] || '').replace(/^\/+|\/+$/g, '');
+    
     try {
       const absPath = safeResolve(folderRelPath);
 
@@ -728,13 +725,13 @@ async function setupRoutes() {
         return res.status(404).json({ success: false, error: `Directory not found: ${folderRelPath}` });
       }
 
-      // --- BYPASS START ---
-      // We are IGORING the real ownership file and passing an empty one.
-      const ownership = {}; 
-      // --- BYPASS END ---
-
+      // Load ownership, but we will explicitly ignore it in the builder
+      const ownership = loadJSONFile(OWNERSHIP_FILE, { ownership: {} }).ownership;
+      
+      // Pass 'null' for username and 'false' for isAdmin.
+      // This tells the builder functions: "There is no authenticated user."
       if (req.query.verbose === 'true') {
-        const contents = buildTree(absPath, folderRelPath, username, isAdmin, ownership);
+        const contents = buildTree(absPath, folderRelPath, null, false, ownership);
         res.json({
           success: true,
           path: folderRelPath,
@@ -742,7 +739,7 @@ async function setupRoutes() {
           contents
         });
       } else {
-        const simpleTree = buildSimpleTree(absPath, folderRelPath, username, isAdmin, ownership);
+        const simpleTree = buildSimpleTree(absPath, folderRelPath, null, false, ownership);
         res.json(simpleTree);
       }
     } catch (err: any) {
