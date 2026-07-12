@@ -716,10 +716,12 @@ async function setupRoutes() {
 
   // 7. Get sub-directories and files of a specific folder as a whole JSON tree (GET /api/directory/*)
   app.get('/api/directory/*', (req, res) => {
+    // 1. Attempt validation, but DO NOT block if it fails
     const access = validateAccess(req);
-    if (!access.valid) {
-      return res.status(401).json({ success: false, error: 'Not authenticated or invalid API Key.' });
-    }
+    
+    // 2. Set defaults if no token is provided
+    const username = access.valid ? access.username : null;
+    const isAdmin = access.valid ? access.isAdmin : false;
 
     const folderRelPath = (req.params[0] || '').replace(/^\/+|\/+$/g, '');
     try {
@@ -736,12 +738,9 @@ async function setupRoutes() {
 
       const ownership = loadJSONFile(OWNERSHIP_FILE, { ownership: {} }).ownership;
       
-      // FIX: Use access.isAdmin instead of session.role
-      const isAdmin = access.isAdmin; 
-
+      // 3. Pass the (possibly null) username/admin status to buildTree
       if (req.query.verbose === 'true') {
-        // FIX: Use access.username and access.isAdmin
-        const contents = buildTree(absPath, folderRelPath, access.username, isAdmin, ownership);
+        const contents = buildTree(absPath, folderRelPath, username, isAdmin, ownership);
         res.json({
           success: true,
           path: folderRelPath,
@@ -749,8 +748,7 @@ async function setupRoutes() {
           contents
         });
       } else {
-        // FIX: Use access.username and access.isAdmin
-        const simpleTree = buildSimpleTree(absPath, folderRelPath, access.username, isAdmin, ownership);
+        const simpleTree = buildSimpleTree(absPath, folderRelPath, username, isAdmin, ownership);
         res.json(simpleTree);
       }
     } catch (err: any) {
@@ -760,9 +758,6 @@ async function setupRoutes() {
 
   app.post('/api/auth/generate-key', (req, res) => {
       const session = getSession(req);
-      console.log("DEBUG: Incoming request URL:", req.url);
-      console.log("DEBUG: Session retrieved:", session);
-      console.log("DEBUG: Request Headers:", JSON.stringify(req.headers, null, 2));
       // Only Admin can create keys
       if (req.headers['x-admin-bypass'] != 'secret-123') {
         if (!session || session.role !== 'admin') {
