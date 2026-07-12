@@ -716,14 +716,8 @@ async function setupRoutes() {
 
   // 7. Get sub-directories and files of a specific folder as a whole JSON tree (GET /api/directory/*)
   app.get('/api/directory/*', (req, res) => {
-    // 1. Attempt validation, but DO NOT block if it fails
-    const access = validateAccess(req);
-    
-    // 2. Set defaults if no token is provided
-    const username = access.valid ? access.username : null;
-    const isAdmin = access.valid ? access.isAdmin : false;
-
     const folderRelPath = (req.params[0] || '').replace(/^\/+|\/+$/g, '');
+    
     try {
       const absPath = safeResolve(folderRelPath);
 
@@ -736,11 +730,10 @@ async function setupRoutes() {
         return res.status(400).json({ success: false, error: 'Path is a file, not a directory' });
       }
 
-      const ownership = loadJSONFile(OWNERSHIP_FILE, { ownership: {} }).ownership;
-      
-      // 3. Pass the (possibly null) username/admin status to buildTree
+      // Pass null for username, false for isAdmin, and an empty object for ownership.
+      // This forces the builders to ignore restriction logic.
       if (req.query.verbose === 'true') {
-        const contents = buildTree(absPath, folderRelPath, username, isAdmin, ownership);
+        const contents = buildTree(absPath, folderRelPath, null, false, {});
         res.json({
           success: true,
           path: folderRelPath,
@@ -748,7 +741,7 @@ async function setupRoutes() {
           contents
         });
       } else {
-        const simpleTree = buildSimpleTree(absPath, folderRelPath, username, isAdmin, ownership);
+        const simpleTree = buildSimpleTree(absPath, folderRelPath, null, false, {});
         res.json(simpleTree);
       }
     } catch (err: any) {
