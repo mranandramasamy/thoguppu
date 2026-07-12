@@ -1,28 +1,23 @@
-# Use the Red Hat UBI Node.js image
 FROM registry.access.redhat.com/ubi9/nodejs-20:latest
 
-# Set the working directory
 WORKDIR /opt/app-root/src
 
-# Set permissions for the working directory so the build user can write to it
-USER 0
-RUN chown -R 1001:0 /opt/app-root/src && \
-    chmod -R g+rwX /opt/app-root/src
-USER 1001
-
-# Copy package files and install dependencies
-# We copy only these first to leverage Docker layer caching
+# 1. Copy only the dependency files
 COPY package*.json ./
+
+# 2. THE FIX: Remove the lockfile. 
+# This ensures npm generates a fresh one owned by the container user,
+# avoiding the 'permission denied' error on the file copied from your host.
+RUN rm -f package-lock.json
+
+# 3. Now install. npm will create a new, compatible lockfile automatically.
 RUN npm install
 
-# Copy the rest of the application source
+# 4. Copy the rest of the application
 COPY . .
 
-# Build the project
+# 5. Build
 RUN npm run build
 
-# Expose the port your app runs on
-EXPOSE 8080
-
-# Start the application
+# 6. Run
 CMD ["node", "dist/server.cjs"]
