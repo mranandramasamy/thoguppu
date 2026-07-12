@@ -1,0 +1,16 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: thoguppu
+  labels:
+    app: thoguppu
+spec:
+  to:
+    kind: Service
+    name: thoguppu
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

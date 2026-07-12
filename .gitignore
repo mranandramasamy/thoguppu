@@ -1,2 +1,19 @@
+# Dependency directories
 node_modules/
-package-lock.json
+
+# Build output
+dist/
+build/
+
+# Database files (CRITICAL: Do not commit your live data/passwords!)
+cms_data/
+.db_*.json
+
+# Environment variables
+.env
+.env.local
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store

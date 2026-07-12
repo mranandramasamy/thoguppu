@@ -1,0 +1,31 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: thoguppu-serverless
+  labels:
+    app: thoguppu
+spec:
+  template:
+    metadata:
+      annotations:
+        # This triggers OpenShift's image change controller to wire up the tag automatically
+        image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"thoguppu:latest"},"fieldPath":"spec.template.spec.containers[0].image"}]'
+        autoscaling.knative.dev/min-scale: "0"
+        autoscaling.knative.dev/max-scale: "5"
+    spec:
+      containers:
+        - name: thoguppu-app
+          # Point it directly to your ImageStream reference
+          image: thoguppu:latest 
+          ports:
+            - containerPort: 8080
+          env:
+            - name: NODE_ENV
+              value: "production"
+          volumeMounts:
+            - name: cms-volume
+              mountPath: /opt/app-root/src/cms_data
+      volumes:
+        - name: cms-volume
+          persistentVolumeClaim:
+            claimName: thoguppu-pvc

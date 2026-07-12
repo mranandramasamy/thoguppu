@@ -4,7 +4,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const DATA_DIR = path.resolve(process.cwd(), 'cms_data');
 
 const USERS_FILE = path.join(DATA_DIR, '.db_users.json');
@@ -37,13 +37,13 @@ function ensureDatabase() {
   if (adminIndex === -1) {
     usersData.users.push({
       username: 'admin',
-      passwordHash: 'da2e480dbb29d9ab6e404b3502276e94f347e6a9e7beb4ba0ab6eec6edbf10d7', // SHA-256 of "admin"
+      passwordHash: '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918', // SHA-256 of "admin"
       role: 'admin'
     });
     saveJSONFile(USERS_FILE, usersData);
   } else {
     // Force the admin user's password hash to be "admin" (SHA-256 of "admin")
-    usersData.users[adminIndex].passwordHash = 'da2e480dbb29d9ab6e404b3502276e94f347e6a9e7beb4ba0ab6eec6edbf10d7';
+    usersData.users[adminIndex].passwordHash = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918';
     saveJSONFile(USERS_FILE, usersData);
   }
 
@@ -267,6 +267,11 @@ function buildSimpleTree(
 async function startServer() {
   const app = express();
   app.use(express.json());
+
+  // === HEALTH CHECK ENDPOINT ===
+  app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'ok' });
+  });
 
   // === CMS AUTH ENDPOINTS ===
 
