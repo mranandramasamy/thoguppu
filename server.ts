@@ -6,12 +6,13 @@ import { createServer as createViteServer } from 'vite';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const DATA_DIR = path.resolve(process.cwd(), 'cms_data');
-
 const USERS_FILE = path.join(DATA_DIR, '.db_users.json');
 const OWNERSHIP_FILE = path.join(DATA_DIR, '.db_ownership.json');
 const SESSIONS_FILE = path.join(DATA_DIR, '.db_sessions.json');
-
 const KEYS_FILE = path.join(DATA_DIR, '.db_keys.json');
+
+const app = express();
+app.use(express.json());
 
 if (!fs.existsSync(KEYS_FILE)) {
     saveJSONFile(KEYS_FILE, { keys: {} });
@@ -61,8 +62,9 @@ function ensureDatabase() {
   const ADMIN_PASS_HASH = process.env.ADMIN_PASSWORD_HASH;
 
   if (!ADMIN_PASS_HASH) {
+    // Force a crash so we can see the error in the logs
     console.error("CRITICAL: ADMIN_PASSWORD_HASH environment variable is not set!");
-    return; // Or process.exit(1) if you want the app to crash without valid creds
+    process.exit(1); 
   }
 
   const adminIndex = usersData.users.findIndex((u: any) => u.username.toLowerCase() === ADMIN_USER.toLowerCase());
@@ -298,9 +300,8 @@ function buildSimpleTree(
   return result;
 }
 
-async function startServer() {
-  const app = express();
-  app.use(express.json());
+async function setupRoutes() {
+  
 
   // === HEALTH CHECK ENDPOINT ===
   app.get('/health', (req, res) => {
@@ -768,7 +769,7 @@ async function startServer() {
       const keysData = loadJSONFile(KEYS_FILE, { keys: {} });
       
       keysData.keys[newKey] = {
-          owner: session.username,
+          owner: session.username,a
           createdAt: new Date().toISOString()
       };
       
@@ -776,6 +777,42 @@ async function startServer() {
       res.json({ success: true, client_id: newKey });
   });
 
+  // === VITE / FRONTEND ASSET ROUTING ===
+    if (process.env.NODE_ENV !== 'production') {
+        createViteServer({
+            server: { middlewareMode: true },
+            appType: 'spa',
+        }).then((vite) => {
+            app.use(vite.middlewares);
+        });
+    } else {
+        const distPath = path.join(process.cwd(), 'dist');
+        app.use(express.static(distPath));
+        app.get('*', (req, res) => {
+            res.sendFile(path.join(distPath, 'index.html'));
+        });
+    }
+
 }
 
-startServer();
+try {
+  console.log("Starting server initialization...");
+
+  // 1. Setup folders and DB
+  ensureDataDirectory(); 
+  
+  // 2. Setup Routes
+  setupRoutes();
+  console.log("Routes configured.");
+
+  // 3. Start Listening
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`CMS Server running on http://localhost:${PORT}`);
+  });
+
+} catch (error) {
+  console.error("FATAL ERROR DURING STARTUP:", error);
+  process.exit(1); 
+}
+
+
