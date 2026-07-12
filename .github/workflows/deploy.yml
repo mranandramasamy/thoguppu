@@ -1,6 +1,5 @@
 name: Deploy to OpenShift Sandbox
 
-# This tells GitHub to run this script whenever you push to 'main'
 on:
   push:
     branches: [ "main" ]
@@ -9,17 +8,15 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      # 1. Grab your source code from the repository
+      # Bumped to v4 to fix the Node.js warning
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      # 2. Install the OpenShift CLI (oc) inside the GitHub server
       - name: Install OpenShift CLI
         uses: redhat-actions/openshift-tools-installer@v1
         with:
           oc: '4'
 
-      # 3. Securely log into your OpenShift cluster
       - name: Authenticate to OpenShift
         uses: redhat-actions/oc-login@v1
         with:
@@ -27,9 +24,7 @@ jobs:
           openshift_token: ${{ secrets.OPENSHIFT_TOKEN }}
           namespace: ${{ secrets.OPENSHIFT_NAMESPACE }}
 
-      # 4. Push the code and trigger the build
       - name: Trigger OpenShift Build
         run: |
           echo "Starting the build process in OpenShift..."
-          # This command packages the GitHub code and sends it to OpenShift's builder
           oc start-build thoguppu --from-dir=. --follow
