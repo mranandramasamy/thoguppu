@@ -6,14 +6,10 @@ WORKDIR /opt/app-root/src
 # Copy dependency manifests
 COPY package*.json ./
 
-# CHANGE: Change ownership of the copied files to the user that runs the build
-# This ensures npm has permission to write package-lock.json
-RUN chown -R 1001:0 /opt/app-root/src
+# RUN chown -R 1001:0 /opt/app-root/src  <-- DELETE THIS LINE
+# RUN USER 1001                        <-- DELETE THIS LINE
 
-# Switch to the user to perform the install
-USER 1001
-
-# Install ALL dependencies
+# The base image already sets up the environment correctly for OpenShift
 RUN npm install
 
 # Copy the rest of the application source code
