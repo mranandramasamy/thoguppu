@@ -221,6 +221,7 @@ export default function App() {
   };
 
   // Fetch the active file's raw content
+  // Fetch the active file's raw content
   const handleSelectFile = async (filePath: string) => {
     if (!token) return;
     setGlobalError(null);
@@ -237,7 +238,7 @@ export default function App() {
       const data = await res.json();
       if (data.success) {
         setActiveFile({
-          path: data.path,
+          path: filePath, // <--- CHANGED FROM data.path
           content: data.content,
           originalContent: data.content,
           isDirty: false,
