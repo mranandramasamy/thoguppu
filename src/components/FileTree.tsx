@@ -87,9 +87,6 @@ export default function FileTree({
     if (!newItemName.trim()) return;
     // Ensure text file ends with .txt or let it be
     let name = newItemName.trim();
-    if (name.indexOf('.') === -1) {
-      name += '.txt';
-    }
     onCreateFile(parent, name);
     setIsCreatingFile(null);
     setNewItemName('');
