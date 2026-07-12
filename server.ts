@@ -213,9 +213,7 @@ function safeResolve(relativePath: string): string {
 function buildTree(
   currentDir: string,
   relativePath = '',
-  username: string,
-  isAdmin: boolean,
-  ownership: Record<string, string>
+  // We can ignore username, isAdmin, and ownership entirely here for public reads
 ): FileNode[] {
   const items = fs.readdirSync(currentDir, { withFileTypes: true });
   const nodes: FileNode[] = [];
@@ -224,39 +222,32 @@ function buildTree(
     const itemRelativePath = relativePath ? `${relativePath}/${item.name}` : item.name;
     const itemAbsolutePath = path.join(currentDir, item.name);
 
-    if (item.name.startsWith('.')) continue; // skip hidden system database files
-
-    const hasAccess = isAdmin || isOwner(username, itemRelativePath, ownership);
+    if (item.name.startsWith('.')) continue;
 
     if (item.isDirectory()) {
-      const children = buildTree(itemAbsolutePath, itemRelativePath, username, isAdmin, ownership);
-      if (isAdmin || hasAccess || children.length > 0) {
-        nodes.push({
-          name: item.name,
-          path: itemRelativePath,
-          type: 'directory',
-          children
-        });
-      }
+      const children = buildTree(itemAbsolutePath, itemRelativePath);
+      // Always include directories
+      nodes.push({
+        name: item.name,
+        path: itemRelativePath,
+        type: 'directory',
+        children
+      });
     } else if (item.isFile()) {
-      if (hasAccess) {
-        const stats = fs.statSync(itemAbsolutePath);
-        nodes.push({
-          name: item.name,
-          path: itemRelativePath,
-          type: 'file',
-          size: stats.size,
-          updatedAt: stats.mtime.toISOString()
-        });
-      }
+      // Always include files
+      const stats = fs.statSync(itemAbsolutePath);
+      nodes.push({
+        name: item.name,
+        path: itemRelativePath,
+        type: 'file',
+        size: stats.size,
+        updatedAt: stats.mtime.toISOString()
+      });
     }
   }
 
-  // Sort directories first, then files alphabetically
   return nodes.sort((a, b) => {
-    if (a.type !== b.type) {
-      return a.type === 'directory' ? -1 : 1;
-    }
+    if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
     return a.name.localeCompare(b.name);
   });
 }
@@ -264,10 +255,7 @@ function buildTree(
 // Build clean, simplified JSON tree representing folders and files recursively (no metadata like name, size, type etc)
 function buildSimpleTree(
   currentDir: string,
-  relativePath = '',
-  username: string,
-  isAdmin: boolean,
-  ownership: Record<string, string>
+  relativePath = ''
 ): any {
   const items = fs.readdirSync(currentDir, { withFileTypes: true });
   const result: any = {};
@@ -276,27 +264,18 @@ function buildSimpleTree(
     const itemRelativePath = relativePath ? `${relativePath}/${item.name}` : item.name;
     const itemAbsolutePath = path.join(currentDir, item.name);
 
-    if (item.name.startsWith('.')) continue; // skip system database files
-
-    const hasAccess = isAdmin || isOwner(username, itemRelativePath, ownership);
+    if (item.name.startsWith('.')) continue;
 
     if (item.isDirectory()) {
-      const subTree = buildSimpleTree(itemAbsolutePath, itemRelativePath, username, isAdmin, ownership);
-      if (isAdmin || hasAccess || Object.keys(subTree).length > 0) {
-        result[item.name] = subTree;
-      }
+      result[item.name] = buildSimpleTree(itemAbsolutePath, itemRelativePath);
     } else if (item.isFile()) {
-      if (hasAccess) {
-        try {
-          const content = fs.readFileSync(itemAbsolutePath, 'utf-8');
-          result[item.name] = content;
-        } catch (e) {
-          result[item.name] = '';
-        }
+      try {
+        result[item.name] = fs.readFileSync(itemAbsolutePath, 'utf-8');
+      } catch (e) {
+        result[item.name] = '';
       }
     }
   }
-
   return result;
 }
 
@@ -664,83 +643,30 @@ async function setupRoutes() {
 
   // 6. Direct clean content fetching API route (GET /api/content/<filepath>)
   app.get('/api/content/*', (req, res) => {
-    const session = getSession(req);
-    if (!session) {
-      return res.status(401).json({ success: false, error: 'Not authenticated. Please log in.' });
-    }
-
     const fileRelPath = req.params[0];
-    if (!fileRelPath) {
-      return res.status(400).json({ success: false, error: 'File path is required' });
-    }
-
-    try {
-      const cleanPath = fileRelPath.replace(/^\/+|\/+$/g, '');
-      const absPath = safeResolve(cleanPath);
-      if (!fs.existsSync(absPath)) {
-        return res.status(404).json({ success: false, error: `File not found: ${cleanPath}` });
-      }
-
+    const absPath = safeResolve(fileRelPath.replace(/^\/+|\/+$/g, ''));
+    if (!fs.existsSync(absPath)) return res.status(404).json({ success: false });
+    
+    const content = fs.readFileSync(absPath, 'utf-8');
+    if (req.query.verbose === 'true') {
       const stat = fs.statSync(absPath);
-      if (stat.isDirectory()) {
-        return res.status(400).json({ success: false, error: 'Path is a directory, not a file' });
-      }
-
-      const ownership = loadJSONFile(OWNERSHIP_FILE, { ownership: {} }).ownership;
-      const isAdmin = session.role === 'admin';
-
-      const hasAccess = isAdmin || isOwner(session.username, cleanPath, ownership);
-      if (!hasAccess) {
-        return res.status(403).json({ success: false, error: 'Permission denied. You do not own this file.' });
-      }
-
-      const content = fs.readFileSync(absPath, 'utf-8');
-
-      if (req.query.verbose === 'true') {
-        res.json({
-          success: true,
-          path: cleanPath,
-          content,
-          size: stat.size,
-          updatedAt: stat.mtime.toISOString()
-        });
-      } else {
-        res.json({
-          content
-        });
-      }
-    } catch (err: any) {
-      res.status(400).json({ success: false, error: err.message });
+      res.json({ success: true, content, size: stat.size });
+    } else {
+      res.json({ content });
     }
   });
 
   // 7. Get sub-directories and files of a specific folder as a whole JSON tree (GET /api/directory/*)
   app.get('/api/directory/*', (req, res) => {
     const folderRelPath = (req.params[0] || '').replace(/^\/+|\/+$/g, '');
-    
     try {
       const absPath = safeResolve(folderRelPath);
+      if (!fs.existsSync(absPath)) return res.status(404).json({ success: false });
 
-      if (!fs.existsSync(absPath)) {
-        return res.status(404).json({ success: false, error: `Directory not found: ${folderRelPath}` });
-      }
-
-      // Load ownership, but we will explicitly ignore it in the builder
-      const ownership = loadJSONFile(OWNERSHIP_FILE, { ownership: {} }).ownership;
-      
-      // Pass 'null' for username and 'false' for isAdmin.
-      // This tells the builder functions: "There is no authenticated user."
       if (req.query.verbose === 'true') {
-        const contents = buildTree(absPath, folderRelPath, null, false, ownership);
-        res.json({
-          success: true,
-          path: folderRelPath,
-          name: path.basename(absPath) || 'root',
-          contents
-        });
+        res.json({ success: true, contents: buildTree(absPath, folderRelPath) });
       } else {
-        const simpleTree = buildSimpleTree(absPath, folderRelPath, null, false, ownership);
-        res.json(simpleTree);
+        res.json(buildSimpleTree(absPath, folderRelPath));
       }
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
