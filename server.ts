@@ -769,7 +769,7 @@ async function setupRoutes() {
       const keysData = loadJSONFile(KEYS_FILE, { keys: {} });
       
       keysData.keys[newKey] = {
-          owner: session.username,a
+          owner: session.username,
           createdAt: new Date().toISOString()
       };
       
